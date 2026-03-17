@@ -72,6 +72,7 @@ Feature: Casos negativos de usuarios en ServeRest
     Given path 'usuarios', 'ABCDEF1234567890'
     And request payload
     When method put
+    #Aquí surge un tema, porque debería ser 400, pero el sistema ingresa uno nuevo y da 201
     Then status 400
     And match response == messageSchema
     And match response == { message: 'Usuário não encontrado' }
