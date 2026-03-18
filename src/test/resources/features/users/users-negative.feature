@@ -21,31 +21,49 @@ Feature: Casos negativos de usuarios en ServeRest
     And request duplicatePayload
     When method post
     Then status 400
-    # Validamos schema del error y el mensaje específico de la API
     And match response == messageSchema
     And match response == { message: 'Este email já está sendo usado' }
 
-  Scenario: Buscar usuario con ID inexistente
-    Given path 'usuarios', 'ABCDEF1234567890'
+  # Scenario Outline para probar GET con múltiples IDs inválidos
+  # Verifica que la API siempre responde consistentemente con cualquier ID inexistente
+  Scenario Outline: Buscar usuario con ID inexistente
+    Given path 'usuarios', '<id_invalido>'
     When method get
     Then status 400
     And match response == messageSchema
     And match response == { message: 'Usuário não encontrado' }
 
-  Scenario: Eliminar usuario con ID inexistente
-    Given path 'usuarios', 'ABCDEF1234567890'
+    Examples:
+      | id_invalido      |
+      | ABCDEF1234567890 |
+      | 0000000000000000 |
+      | invalidID999XXXX |
+      | 1234888GRGERG18R |
+
+  # Scenario Outline para probar DELETE con múltiples IDs inválidos
+  # ServeRest devuelve 200 con mensaje específico cuando el ID no existe
+  Scenario Outline: Eliminar usuario con ID inexistente
+    Given path 'usuarios', '<id_invalido>'
     When method delete
     Then status 200
     And match response == messageSchema
     And match response == { message: 'Nenhum registro excluído' }
 
-  Scenario: Registrar usuario sin campos obligatorios
+    Examples:
+      | id_invalido          |
+      | ABCDEF1234567890     |
+      | 000000000000000000   |
+      | invalidID999         |
+
+  # Scenario Outline para probar POST con diferentes combinaciones de campos inválidos
+  # Cada fila representa un caso de validación distinto que la API debe rechazar
+  Scenario Outline: Registrar usuario con datos inválidos
     * def invalidPayload =
     """
     {
-      "nome": "",
-      "email": "",
-      "password": "",
+      "nome": "<nome>",
+      "email": "<email>",
+      "password": "<password>",
       "administrador": "true"
     }
     """
@@ -53,33 +71,42 @@ Feature: Casos negativos de usuarios en ServeRest
     And request invalidPayload
     When method post
     Then status 400
-    # La API devuelve un objeto con los mensajes de error por campo
-    And match response.nome == '#string'
-    And match response.email == '#string'
-    And match response.password == '#string'
+    # Verificamos que la API devuelve error por el campo inválido correspondiente
+    And match response.<campo_error> == '#string'
 
-  # Caso negativo de PUT: actualizar usuario con ID que no existe
-  Scenario: Actualizar usuario con ID inexistente
+    Examples:
+      | nome       | email              | password  | campo_error |
+      |            | qa@mail.com        | Test1234  | nome        |
+      | Usuario QA |                    | Test1234  | email       |
+      | Usuario QA | qa@mail.com        |           | password    |
+      |            |                    |           | nome        |
+
+  # Scenario Outline para probar PUT con ID inexistente
+  # ServeRest hace upsert: si el ID no existe crea el usuario (201)
+  Scenario Outline: Actualizar usuario con ID inexistente debe retornar error
     * def payload =
-    """
-    {
-      "nome": "No Existe",
-      "email": "#(DataGenerator.uniqueEmail())",
-      "password": "Test1234",
-      "administrador": "false"
-    }
-    """
+  """
+  {
+    "nome": "<nome>",
+    "email": "#(DataGenerator.uniqueEmail())",
+    "password": "<password>",
+    "administrador": "<administrador>"
+  }
+  """
     Given path 'usuarios', 'ABCDEF1234567890'
     And request payload
     When method put
-    #Aquí surge un tema, porque debería ser 400, pero el sistema ingresa uno nuevo y da 201
+  # Este test arrojará error porque nos retorna un 201 y no un 400 que es lo esperado
     Then status 400
     And match response == messageSchema
     And match response == { message: 'Usuário não encontrado' }
 
-  # Caso negativo de PUT: email ya usado por otro usuario
+    Examples:
+      | nome         | password   | administrador |
+      | No Existe 1  | Test1234   | false         |
+      | No Existe 2  | Pass5678   | true          |
+
   Scenario: Actualizar usuario con email ya registrado
-    # Creamos un segundo usuario para tener dos emails distintos en el sistema
     * def secondUserResult = call read('classpath:features/users/helpers/create-user.feature')
     * def secondUser = secondUserResult.createdUser
     * def conflictPayload =
@@ -91,7 +118,6 @@ Feature: Casos negativos de usuarios en ServeRest
       "administrador": "true"
     }
     """
-    # Intentamos actualizar existingUser con el email de secondUser — debe fallar
     Given path 'usuarios', existingUser._id
     And request conflictPayload
     When method put

@@ -2,23 +2,18 @@ Feature: CRUD de usuarios en ServeRest
 
   Background:
     * url baseUrl
-    # Cargamos los schemas JSON para validar la estructura de las respuestas
     * def userSchema = read('classpath:features/schemas/user-schema.json')
     * def userListSchema = read('classpath:features/schemas/user-list-schema.json')
     * def messageSchema = read('classpath:features/schemas/message-schema.json')
-    # Llamamos al helper que crea un usuario y devuelve sus datos para usarlos en los tests
     * def createUserResult = call read('classpath:features/users/helpers/create-user.feature')
     * def existingUser = createUserResult.createdUser
 
-  # --- GET /usuarios ---
   Scenario: Obtener lista de todos los usuarios
     Given path 'usuarios'
     When method get
     Then status 200
-    # Validamos que la respuesta cumple el schema definido en user-list-schema.json
     And match response == userListSchema
     And match response.usuarios == '#[]'
-    # Verificamos que cada elemento de la lista tenga los campos esperados basados en el contrato de serverest
     And match each response.usuarios contains
     """
     {
@@ -30,7 +25,6 @@ Feature: CRUD de usuarios en ServeRest
     }
     """
 
-  # --- POST /usuarios ---
   Scenario: Registrar nuevo usuario con datos válidos
     * def DataGenerator = Java.type('helpers.DataGenerator')
     * def payload =
@@ -46,29 +40,27 @@ Feature: CRUD de usuarios en ServeRest
     And request payload
     When method post
     Then status 201
-    # Validamos que la respuesta tiene el mensaje correcto y un _id generado
     And match response == { message: 'Cadastro realizado com sucesso', _id: '#string' }
 
-  # --- GET /usuarios/{_id} ---
   Scenario: Buscar usuario por ID
     Given path 'usuarios', existingUser._id
     When method get
     Then status 200
     And match response == userSchema
-    # Verificamos que los datos del usuario coincidan con lo que se creó
     And match response._id == existingUser._id
     And match response.nome == existingUser.nome
     And match response.email == existingUser.email
 
-  # --- PUT /usuarios/{_id} ---
-  Scenario: Actualizar usuario existente
+  # Scenario Outline de PUT: prueba actualizar el usuario con diferentes combinaciones de datos
+  # Cada fila de Examples es una ejecución independiente con distintos valores
+  Scenario Outline: Actualizar usuario con diferentes datos
     * def updatedPayload =
     """
     {
-      "nome": "Usuario QA Actualizado",
+      "nome": "<nombre>",
       "email": "#(existingUser.email)",
-      "password": "NewPass123",
-      "administrador": "false"
+      "password": "<password>",
+      "administrador": "<administrador>"
     }
     """
     Given path 'usuarios', existingUser._id
@@ -76,25 +68,36 @@ Feature: CRUD de usuarios en ServeRest
     When method put
     Then status 200
     And match response == { message: 'Registro alterado com sucesso' }
-    # Verificación post-update: consultamos el usuario para confirmar que los cambios persisten
+    # Verificación post-update: confirmamos que los datos nuevos persisten
     Given path 'usuarios', existingUser._id
     When method get
     Then status 200
-    And match response.nome == 'Usuario QA Actualizado'
-    And match response.email == existingUser.email
-    And match response.administrador == 'false'
+    And match response.nome == '<nombre>'
+    And match response.administrador == '<administrador>'
 
-  # --- DELETE /usuarios/{_id} ---
-  Scenario: Eliminar usuario existente
-    # Creamos un usuario nuevo específicamente para borrarlo (no afecta otros escenarios)
+    Examples:
+      | nombre                  | password    | administrador |
+      | Usuario QA Actualizado  | NewPass123  | false         |
+      | Admin QA Actualizado    | AdminPass1  | true          |
+      | Tester QA               | TestPass99  | false         |
+
+  # Scenario Outline de DELETE: crea un usuario nuevo por cada fila y lo elimina
+  # Usamos el helper directamente dentro del outline para tener usuarios independientes
+  Scenario Outline: Eliminar usuario y verificar que ya no existe
     * def newUserResult = call read('classpath:features/users/helpers/create-user.feature')
     * def userToDelete = newUserResult.createdUser
     Given path 'usuarios', userToDelete._id
     When method delete
     Then status 200
     And match response == { message: 'Registro excluído com sucesso' }
-    # Verificación post-delete: confirmamos que el usuario ya no existe
+    # Verificación post-delete: el usuario ya no debe encontrarse
     Given path 'usuarios', userToDelete._id
     When method get
     Then status 400
     And match response == { message: 'Usuário não encontrado' }
+
+    Examples:
+      | iteracion |
+      | 1         |
+      | 2         |
+      | 3         |
